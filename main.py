@@ -3,12 +3,13 @@ import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
-import random
+
 
 #Leer Archivos
 df_items = pd.read_parquet('data_items.parquet')
 df_reviews = pd.read_parquet('data_reviews.parquet')
 df_games = pd.read_parquet('data_games_explode.parquet')
+merged_df = pd.read_parquet('items_merged_games.parquet')
 
 df_items['playtime_forever'] = (df_items['playtime_forever'] / 60).round(2)
 
@@ -19,7 +20,7 @@ app = FastAPI()
 async def root():
     return {"message": "Bienvenido a la Api de Steam"}
 
-merged_df = pd.merge(df_games, df_items, on='item_id', how='inner')
+
 
 
 @app.get("/PlayTimeGenre/{genero}")
