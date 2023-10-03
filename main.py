@@ -144,7 +144,7 @@ def sentiment_analysis(anio : int ):
 
         return resultado
   
-df_reviews_mix = df_reviews.head(10000)
+df_reviews_mix = df_reviews.head(3000)
 df_reviews_mix = df_reviews_mix.sample(frac=1, random_state=42) 
 
  # Crear una matriz de interacciones
