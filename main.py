@@ -1,11 +1,9 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import Optional
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
-
+import random
 
 #Leer Archivos
 df_items = pd.read_parquet('data_items.parquet')
@@ -21,13 +19,15 @@ app = FastAPI()
 async def root():
     return {"message": "Bienvenido a la Api de Steam"}
 
+merged_df = pd.merge(df_games, df_items, on='item_id', how='inner')
+
 
 @app.get("/PlayTimeGenre/{genero}")
 def playTimeGenre( genero : str ):
     genero_especificado = genero.lower()
     #1. Realiza un merge entre las dos tablas utilizando la columna 'item_id' como clave de unión
-    df_games_copy  = df_games[df_games['genres'] == genero_especificado]
-    merged_df = pd.merge(df_games_copy, df_items, on='item_id', how='inner')
+    
+    
     # 2. Filtra las filas por el género especificado (por ejemplo, 'Género X')
     filtro_por_genero = merged_df[merged_df['genres'] == genero_especificado]
 
@@ -45,15 +45,9 @@ def playTimeGenre( genero : str ):
  
 @app.get("/UserForGenre/{genero}")
 def UserForGenre( genero : str ):
-
-    # Paso 1: Filtrar los juegos del género deseado     
-    juegos_genero = df_games[df_games['genres'] == genero.lower()]
-   
-    # Paso 2: Unir df_items y juegos_genero en función de item_id
-    df_merged = pd.merge(df_items, juegos_genero, on='item_id')
-
+  
     # Paso 3: Calcular la suma de horas jugadas por usuario y género
-    horas_por_usuario = df_merged.groupby(['user_id', 'genres'])['playtime_forever'].sum().reset_index()
+    horas_por_usuario = merged_df.groupby(['user_id', 'genres'])['playtime_forever'].sum().reset_index()
     
     # Paso 4: Encontrar el usuario con más horas jugadas para ese género
     usuario_max_horas = horas_por_usuario[horas_por_usuario['genres'] == genero].nlargest(1, 'playtime_forever')
@@ -63,7 +57,7 @@ def UserForGenre( genero : str ):
             return JSONResponse(status_code=404, content=error_message)
    
     # Paso 5: Calcular la acumulación de horas jugadas por año para ese usuario y género
-    horas_por_anio = df_merged[df_merged['user_id'] == usuario_max_horas.iloc[0]['user_id']]
+    horas_por_anio = merged_df[merged_df['user_id'] == usuario_max_horas.iloc[0]['user_id']]
     horas_por_anio['release_date'] = pd.to_datetime(horas_por_anio['release_date'])
     horas_por_anio['anio'] = horas_por_anio['release_date'].dt.year
     horas_por_anio = horas_por_anio.groupby('anio')['playtime_forever'].sum().round(2).reset_index()
@@ -149,47 +143,29 @@ def sentiment_analysis(anio : int ):
 
         return resultado
   
+df_reviews_mix = df_reviews.head(10000)
+df_reviews_mix = df_reviews_mix.sample(frac=1, random_state=42) 
+
+ # Crear una matriz de interacciones
+user_item_matrix = df_reviews_mix.pivot_table(index='user_id', columns='item_id', values='sentiment_analysis').fillna(0)
+
+# Calcular la similitud del coseno entre usuarios
+user_similarity = cosine_similarity(user_item_matrix)
 
 @app.get("/recomendacion_usuario/{id_usuario}")
 def recomendacion_usuario(id_usuario : str):
-    # Muestra aleatoria de datos (ajusta el tamaño según sea necesario)
-    df = df_reviews.sample(n=5000, random_state=42)
-    df_aux = df_reviews[df_reviews['user_id'] == id_usuario]
-    if df_aux.empty:
-            error_message = {"error": "No se encontro el usuario proporcionado."}
-            return JSONResponse(status_code=404, content=error_message)
-    df_aux = pd.DataFrame(df_aux.iloc[0]).T     
-    df_combinada = pd.concat([df_aux, df], axis=0, ignore_index=True)
-    # Eliminar duplicados en df_sample si es necesario
-    df_combinada = df_combinada.drop_duplicates(subset=['user_id', 'item_id'])
-    df_combinada.reset_index(drop=True,inplace=True)
-     
+    # Obtener la fila correspondiente al usuario 
+    user_vector = user_item_matrix.loc[id_usuario].values.reshape(1, -1)
     
-    # Encontrar la fila de similitud del usuario deseado
-    indice_usuario = df_combinada[df_combinada['user_id'] == id_usuario].index[0]
-    # Crear una matriz de interacciones (usuarios x juegos)
-    matriz_interacciones = pd.pivot_table(df_combinada, values='recommend', index='user_id', columns='item_id', fill_value=0)
-
-    # Calcular la similitud del coseno entre usuarios
-    similitud = cosine_similarity(matriz_interacciones)
-    similitudes_usuario = similitud[indice_usuario]
-
-    # Ordenar los usuarios por similitud en orden descendente y excluir al usuario de consulta
-    usuarios_similares = sorted(range(len(similitudes_usuario)), key=lambda i: similitudes_usuario[i], reverse=True)[1:]
-
-    # Obtener los juegos recomendados en función de los usuarios similares
-    juegos_recomendados = []
-
-    for usuario_similar in usuarios_similares:
-        juegos_usuario_similar = matriz_interacciones.iloc[usuario_similar]
-        juegos_recomendados_usuario_similar = juegos_usuario_similar[juegos_usuario_similar == 1].index.tolist()
-        juegos_recomendados.extend(juegos_recomendados_usuario_similar)
-
-    # Eliminar juegos que el usuario ya haya recomendado
-    juegos_recomendados = list(set(juegos_recomendados) - set(matriz_interacciones.iloc[indice_usuario][matriz_interacciones.iloc[indice_usuario] == 1].index))
-
-    # Limitar el número de recomendaciones
-    juegos_recomendados = juegos_recomendados[:5]
-
-
-    return juegos_recomendados
+    # Calcular la similitud entre el usuario ingresado y todos los demás usuarios
+    similarities = cosine_similarity(user_vector, user_item_matrix)
+    
+     # Obtener los juegos recomendados en función de los usuarios similares
+    user_reviews = user_item_matrix.loc[id_usuario]
+    similar_users = df_reviews['user_id'][similarities.argsort()[0][-6:-1]]
+    recommended_items = user_item_matrix.loc[similar_users].mean(axis=0).sort_values(ascending=False)
+    
+    # Filtrar los juegos que el usuario ya ha jugado
+    recommended_items = recommended_items[recommended_items.index.isin(user_reviews[user_reviews == 0].index)]
+    
+    return recommended_items.index.tolist()[:5]
