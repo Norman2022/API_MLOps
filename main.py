@@ -144,7 +144,7 @@ def sentiment_analysis(anio : int ):
 
         return resultado
   
-df_reviews_mix = df_reviews.head(3000)
+df_reviews_mix = df_reviews.head(5000)
 df_reviews_mix = df_reviews_mix.sample(frac=1, random_state=42) 
 
  # Crear una matriz de interacciones
@@ -155,18 +155,24 @@ user_similarity = cosine_similarity(user_item_matrix)
 
 @app.get("/recomendacion_usuario/{id_usuario}")
 def recomendacion_usuario(id_usuario : str):
-    # Obtener la fila correspondiente al usuario 
-    user_vector = user_item_matrix.loc[id_usuario].values.reshape(1, -1)
-    
-    # Calcular la similitud entre el usuario ingresado y todos los demás usuarios
-    similarities = cosine_similarity(user_vector, user_item_matrix)
-    
-     # Obtener los juegos recomendados en función de los usuarios similares
-    user_reviews = user_item_matrix.loc[id_usuario]
-    similar_users = df_reviews['user_id'][similarities.argsort()[0][-6:-1]]
-    recommended_items = user_item_matrix.loc[similar_users].mean(axis=0).sort_values(ascending=False)
-    
-    # Filtrar los juegos que el usuario ya ha jugado
-    recommended_items = recommended_items[recommended_items.index.isin(user_reviews[user_reviews == 0].index)]
-    
-    return recommended_items.index.tolist()[:5]
+    if id_usuario in user_item_matrix.index:
+        # Obtener la fila correspondiente al usuario 
+        user_vector = user_item_matrix.loc[id_usuario].values.reshape(1, -1)
+        
+        # Calcular la similitud entre el usuario ingresado y todos los demás usuarios
+        similarities = cosine_similarity(user_vector, user_item_matrix)
+        
+        # Obtener los juegos recomendados en función de los usuarios similares
+        user_reviews = user_item_matrix.loc[id_usuario]
+        similar_users = df_reviews['user_id'][similarities.argsort()[0][-6:-1]]
+        recommended_items = user_item_matrix.loc[similar_users].mean(axis=0).sort_values(ascending=False)
+        
+        # Filtrar los juegos que el usuario ya ha jugado
+        recommended_items = recommended_items[recommended_items.index.isin(user_reviews[user_reviews == 0].index)]
+        
+        return recommended_items.index.tolist()[:5]
+    else:
+        # El usuario no está en user_item_matrix, devuelve los índices disponibles y un mensaje
+        available_users = user_item_matrix.index.tolist()
+        message = "El usuario no está en la base de datos. Pruebe con algunos de estos usuarios: " + ", ".join(available_users[:15])
+        return message
