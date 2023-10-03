@@ -18,7 +18,7 @@ app = FastAPI()
 
 @app.get("/")
 async def root():
-    return {"message": "Bienvenido a la Api de Steam"}
+    return {"message": "Bienvenido a esta Api...dirigirse a /docs"}
 
 
 
@@ -143,7 +143,9 @@ def sentiment_analysis(anio : int ):
         }
 
         return resultado
-  
+
+
+#Achicamos una y otra vez hasta que funcione en render  
 df_reviews_mix = df_reviews.head(5000)
 df_reviews_mix = df_reviews_mix.sample(frac=1, random_state=42) 
 
